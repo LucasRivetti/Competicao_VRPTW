@@ -1,6 +1,7 @@
 import random
 import matplotlib.pyplot as plt
 import numpy as np
+import math
 
 
 # Configurações
@@ -10,6 +11,47 @@ num_ite = 0
 PENALIDADE = 200
 melhores_fitness = []
 historico_real = []
+
+def carregar_vrptw(caminho_arquivo):
+    """Lê o arquivo do VRPTW"""
+    clientes = {}
+    capacidade = 0 
+    
+    with open(caminho_arquivo, 'r') as f:
+        linhas = f.readlines()
+    
+    for linha in linhas:
+        partes = linha.split()
+
+        if len(partes) == 2 and partes[0].isdigit() and partes[1].isdigit():
+            capacidade = int(partes[1])
+
+        elif len(partes) >= 7:
+            try:
+                valores = list(map(int, partes[:7]))
+                id_no = valores[0]
+                clientes[id_no] = {
+                    'x': valores[1],
+                    'y': valores[2],
+                    'demanda': valores[3],
+                    'ready_time': valores[4],
+                    'due_date': valores[5],
+                    'service_time': valores[6]
+                }
+            except ValueError:
+                continue
+
+    n = len(clientes)
+    matriz_adj = np.zeros((n, n))
+    
+    for i in range(n):
+        for j in range(n):
+            if i != j:
+                dx = clientes[i]['x'] - clientes[j]['x']
+                dy = clientes[i]['y'] - clientes[j]['y']
+                matriz_adj[i][j] = math.sqrt(dx**2 + dy**2)
+                
+    return clientes, matriz_adj, capacidade, n
 
 def calcula_dist(x, y, matriz):
     return matriz[x][y]
