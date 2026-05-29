@@ -1,6 +1,10 @@
+import os
 import random
 import numpy as np
 import matplotlib.pyplot as plt
+
+# Raiz do projeto (dois níveis acima de src/enxame/)
+RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 def carregar_grafo(caminho_arquivo):
     with open(caminho_arquivo, 'r') as f:
@@ -172,7 +176,7 @@ def matriz_feromonios_inicial(n):
             
 
 
-d, n = carregar_grafo('lau15_dist.txt')
+d, n = carregar_grafo(os.path.join(RAIZ, "dados", "tsp", "lau15_dist.txt"))
 f = matriz_feromonios_inicial(n)
 
 

@@ -1,6 +1,10 @@
+import os
 import random
 import numpy as np
 import matplotlib.pyplot as plt
+
+# Raiz do projeto (dois níveis acima de src/imunologico/)
+RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 TAMANHO_P = 20
@@ -197,7 +201,7 @@ def clonalg(caminho_arquivo, n_selecionados, d, beta):
 
     return melhor_solucao, melhor_rota, melhor_distancia, historico
 
-caminho_arquivo = "LAU15.txt"
+caminho_arquivo = os.path.join(RAIZ, "dados", "tsp", "lau15_dist.txt")
 
 valores_n = [5, 10, 15]
 valores_d = [2, 4, 6]

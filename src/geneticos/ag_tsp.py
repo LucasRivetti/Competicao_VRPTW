@@ -1,7 +1,11 @@
+import os
 import random
 import matplotlib.pyplot as plt
 import numpy as np
 import math
+
+# Raiz do projeto (dois níveis acima de src/geneticos/)
+RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 # Configurações
@@ -140,7 +144,7 @@ def carregar_grafo(caminho_arquivo):
     return matriz_adj, n
 
 
-matriz, num_cidades = carregar_grafo('lau15_dist.txt')
+matriz, num_cidades = carregar_grafo(os.path.join(RAIZ, "dados", "tsp", "lau15_dist.txt"))
 
 reprodutores = solucoes_iniciais(num_cidades)
 
