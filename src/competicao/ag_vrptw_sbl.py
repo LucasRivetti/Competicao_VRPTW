@@ -155,15 +155,15 @@ def executar_ag(nome_instancia, tempo_max=TEMPO_MAX_SEG):
         # Polimento memético: a cada 50 gerações, uma rajada curta de busca
         # local no melhor global, reinjetado no lugar do pior indivíduo.
         # O fluxo do AG não muda — é um reforço periódico do elitismo.
-        if geracao % 50 == 49 and melhor_solucao is not None:
-            melhor_solucao, melhor_aval, melhorias_bl = busca_local(
-                melhor_solucao, melhor_aval, matriz, clientes, capacidade,
-                max_veiculos, max_tentativas=3000, tempo_limite=2.0)
-            if melhorias_bl:
-                melhor_geracao = geracao
-            pior = max(range(TAM_POP), key=lambda i: chave_deb(avaliacoes[i]))
-            populacao[pior] = melhor_solucao[:]
-            avaliacoes[pior] = melhor_aval
+        # if geracao % 50 == 49 and melhor_solucao is not None:
+        #     melhor_solucao, melhor_aval, melhorias_bl = busca_local(
+        #         melhor_solucao, melhor_aval, matriz, clientes, capacidade,
+        #         max_veiculos, max_tentativas=3000, tempo_limite=2.0)
+        #     if melhorias_bl:
+        #         melhor_geracao = geracao
+        #     pior = max(range(TAM_POP), key=lambda i: chave_deb(avaliacoes[i]))
+        #     populacao[pior] = melhor_solucao[:]
+        #     avaliacoes[pior] = melhor_aval
 
         if geracao % 50 == 0:
             status = "VIAVEL" if melhor_aval["viavel"] else "INVIAVEL"
@@ -172,11 +172,11 @@ def executar_ag(nome_instancia, tempo_max=TEMPO_MAX_SEG):
         geracao += 1
 
     # --- BUSCA LOCAL no melhor indivíduo (pós-processamento) ---
-    tempo_restante = tempo_max - (time.time() - inicio)
-    melhor_solucao, melhor_aval, melhorias = busca_local(
-        melhor_solucao, melhor_aval, matriz, clientes, capacidade,
-        max_veiculos, max_tentativas=200000, tempo_limite=tempo_restante)
-    print(f"Busca local: {melhorias} melhorias aplicadas")
+    # tempo_restante = tempo_max - (time.time() - inicio)
+    # melhor_solucao, melhor_aval, melhorias = busca_local(
+    #     melhor_solucao, melhor_aval, matriz, clientes, capacidade,
+    #     max_veiculos, max_tentativas=200000, tempo_limite=tempo_restante)
+    # print(f"Busca local: {melhorias} melhorias aplicadas")
 
     tempo_exec = time.time() - inicio
 
