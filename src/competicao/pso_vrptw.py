@@ -15,8 +15,8 @@ from competicao.vrptw_comum import (INSTANCIAS_PADRAO, avaliar, busca_local,
 
 AUTORES = "Lucas Rivetti, Ian Nunes"
 TAM_ENXAME = 60
-NUM_ITE_MAX = 1000000
-TEMPO_MAX_SEG = 120
+NUM_ITE_MAX = 1000
+TEMPO_MAX_SEG = 60
 C1 = 2.05
 C2 = 2.05
 W_INICIAL, W_FINAL = 0.9, 0.4
