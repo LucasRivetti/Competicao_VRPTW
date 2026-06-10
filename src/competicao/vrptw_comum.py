@@ -42,7 +42,7 @@ import time
 import numpy as np
 
 # Raiz do projeto (um nível acima de src/)
-RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 
 # Instâncias de treino fornecidas com o trabalho
 INSTANCIAS_PADRAO = ["c101", "c1_2_1", "r209", "rc208", "rc2_4_9"]

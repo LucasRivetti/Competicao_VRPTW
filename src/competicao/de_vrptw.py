@@ -40,7 +40,7 @@ import time
 import numpy as np
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from vrptw_comum import (INSTANCIAS_PADRAO, avaliar, busca_local,
+from competicao.vrptw_comum import (INSTANCIAS_PADRAO, avaliar, busca_local,
                          caminho_instancia, carregar_vrptw, chave_deb,
                          chaves_para_permutacao, decodificar_e_avaliar,
                          eh_melhor_deb, escrever_resultado, imprimir_resumo,
