@@ -50,8 +50,8 @@ from competicao.vrptw_comum import (INSTANCIAS_PADRAO, avaliar, busca_local,
 # ------------------------- Parâmetros do CLONALG ----------------------------
 AUTORES = "Lucas Rivetti, Ian Nunes"        # ajustar com os nomes do grupo
 TAMANHO_P = 30                   # tamanho da população de anticorpos
-NUM_GER_MAX = 1000000            # teto de gerações (para por tempo)
-TEMPO_MAX_SEG = 120              # tempo máximo por instância
+NUM_GER_MAX = 1000            # teto de gerações (para por tempo)
+TEMPO_MAX_SEG = 60              # tempo máximo por instância
 N_SELECIONADOS = 10              # anticorpos selecionados para clonagem
 BETA = 1.0                       # fator de clonagem (Nc = beta*P/rank)
 D_ALEATORIOS = 3                 # piores substituídos por aleatórios

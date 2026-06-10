@@ -50,8 +50,8 @@ from competicao.vrptw_comum import (INSTANCIAS_PADRAO, avaliar, busca_local,
 # --------------------------- Parâmetros da DE -------------------------------
 AUTORES = "Lucas Rivetti, Ian Nunes"        # ajustar com os nomes do grupo
 TAM_POP = 60                     # tamanho da população
-NUM_GER_MAX = 1000000            # teto de gerações (para por tempo)
-TEMPO_MAX_SEG = 120              # tempo máximo por instância
+NUM_GER_MAX = 1000            # teto de gerações (para por tempo)
+TEMPO_MAX_SEG = 60              # tempo máximo por instância
 F = 0.6                          # mesmo fator de escala do original
 ALPHA_BLX = 0.5                  # mesmo alfa da recombinação original
 LIM_INF, LIM_SUP = 0.0, 1.0      # domínio das chaves aleatórias

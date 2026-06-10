@@ -53,8 +53,8 @@ from competicao.vrptw_comum import (INSTANCIAS_PADRAO, busca_local, caminho_inst
 # --------------------------- Parâmetros do ACO ------------------------------
 AUTORES = "Lucas Rivetti, Ian Nunes"        # ajustar com os nomes do grupo
 N_FORMIGAS = 20                  # formigas por iteração
-NUM_ITE_MAX = 1000000            # teto de iterações (para por tempo)
-TEMPO_MAX_SEG = 120              # tempo máximo por instância
+NUM_ITE_MAX = 1000            # teto de iterações (para por tempo)
+TEMPO_MAX_SEG = 60              # tempo máximo por instância
 ALPHA = 1.0                      # peso do feromônio
 BETA = 2.0                       # peso da visibilidade (heurística)
 RHO = 0.10                       # taxa de evaporação

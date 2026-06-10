@@ -127,7 +127,7 @@ def executar_ag(nome_instancia, tempo_max=TEMPO_MAX_SEG):
     melhor_geracao = 0
     geracao = 0
 
-    while geracao < NUM_GER_MAX: # and time.time() - inicio < tempo_evolucao:
+    while geracao < NUM_GER_MAX and time.time() - inicio < tempo_evolucao:
         # --- ELITISMO: ordena a população pelas regras de Deb ---
         ordem = sorted(range(TAM_POP), key=lambda i: chave_deb(avaliacoes[i]))
         novos_filhos = [populacao[i][:] for i in ordem[:QTD_ELITE]]
