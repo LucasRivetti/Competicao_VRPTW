@@ -1,39 +1,3 @@
-"""
-vrptw_comum.py — Funções comuns do VRPTW usadas pelos 5 algoritmos bioinspirados.
-
-Este módulo concentra tudo o que NÃO faz parte da lógica de cada algoritmo:
-    1. leitura das instâncias (formato Solomon / Gehring-Homberger);
-    2. matriz de distâncias euclidianas;
-    3. decodificação da solução (tour gigante -> rotas);
-    4. avaliação (nº de veículos, distância, violações, viabilidade);
-    5. comparação de soluções pelas regras de Deb;
-    6. heurísticas de população inicial;
-    7. busca local simples (pós-processamento, igual para todos);
-    8. verificação independente da solução final;
-    9. escrita do arquivo de resultados no formato exigido pela competição.
-
-REPRESENTAÇÃO DA SOLUÇÃO (igual para todos os algoritmos)
-----------------------------------------------------------
-Uma solução é uma permutação dos clientes 1..N-1 (o "tour gigante").
-O decodificador percorre a permutação na ordem e vai preenchendo veículos:
-quando o próximo cliente violaria a capacidade OU a janela de tempo do
-veículo atual, a rota é fechada (volta ao depósito) e um veículo novo é
-aberto. Assim, TODA permutação é decodificada em rotas que respeitam
-capacidade e janelas de tempo por construção — a única restrição que pode
-sobrar violada é o limite de veículos da frota (e casos estruturais raros,
-que são medidos e contados como violação).
-
-FUNÇÃO OBJETIVO (prioridades da competição)
--------------------------------------------
-    objetivo = num_veiculos * PESO_VEICULO + distancia_total
-
-PESO_VEICULO é maior do que qualquer distância possível nas instâncias,
-o que torna a comparação lexicográfica: primeiro minimiza veículos
-(critério principal da competição), depois a distância (critério
-secundário). As violações NÃO entram no objetivo: elas são tratadas
-separadamente pelas REGRAS DE DEB (ver eh_melhor_deb).
-"""
-
 import math
 import os
 import random
@@ -41,40 +5,22 @@ import time
 
 import numpy as np
 
-# Raiz do projeto (um nível acima de src/)
 RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 
-# Instâncias de treino fornecidas com o trabalho
 INSTANCIAS_PADRAO = ["c101", "c1_2_1", "r209", "rc208", "rc2_4_9"]
 
-# Peso lexicográfico do número de veículos no objetivo.
-# Precisa ser maior que qualquer distância total possível: nas instâncias
-# de até 400 clientes a pior distância fica na casa de dezenas de milhares.
+# maior que qualquer distância total possível nas instâncias (até 400 clientes)
 PESO_VEICULO = 100000.0
 
 
-# ---------------------------------------------------------------------------
-# 1. LEITURA DA INSTÂNCIA
-# ---------------------------------------------------------------------------
 def caminho_instancia(nome):
-    """Monta o caminho do arquivo da instância a partir do nome (ex.: 'c101')."""
-    if os.path.isfile(nome):           # também aceita um caminho completo
+    if os.path.isfile(nome):
         return nome
     return os.path.join(RAIZ, "dados", "vrptw", nome + ".txt")
 
 
 def carregar_vrptw(caminho_arquivo):
-    """
-    Lê o arquivo da instância no formato Solomon/Gehring-Homberger.
-
-    O arquivo tem uma linha 'NUMBER CAPACITY' (2 inteiros) com o tamanho da
-    frota e a capacidade dos veículos, e depois uma linha por nó com 7 campos:
-        id  x  y  demanda  inicio_janela  fim_janela  tempo_servico
-    O nó 0 é o depósito (demanda 0, janela = horizonte de operação).
-
-    Retorna: clientes (dict id -> dados), matriz de distâncias, capacidade,
-             máximo de veículos e número total de nós (depósito incluído).
-    """
+    """Lê instância no formato Solomon/Gehring-Homberger."""
     clientes = {}
     capacidade = 0
     max_veiculos = 0
@@ -85,17 +31,15 @@ def carregar_vrptw(caminho_arquivo):
     for linha in linhas:
         partes = linha.split()
 
-        # Linha de configuração da frota: exatamente 2 números inteiros
         if len(partes) == 2 and partes[0].isdigit() and partes[1].isdigit():
             max_veiculos = int(partes[0])
             capacidade = int(partes[1])
 
-        # Linha de cliente/depósito: 7 ou mais campos numéricos
         elif len(partes) >= 7:
             try:
                 valores = list(map(float, partes[:7]))
             except ValueError:
-                continue  # cabeçalhos de texto são ignorados
+                continue
             id_no = int(valores[0])
             clientes[id_no] = {
                 "x": valores[1],
@@ -108,9 +52,6 @@ def carregar_vrptw(caminho_arquivo):
 
     n = len(clientes)
 
-    # Matriz de distâncias euclidianas (exigência da competição), calculada
-    # de forma vetorizada com numpy e convertida para listas, pois o acesso
-    # elemento a elemento em listas puras é mais rápido nos laços do Python.
     coords = np.array([[clientes[i]["x"], clientes[i]["y"]] for i in range(n)])
     dif = coords[:, None, :] - coords[None, :, :]
     matriz = np.sqrt((dif ** 2).sum(axis=2)).tolist()
@@ -118,13 +59,8 @@ def carregar_vrptw(caminho_arquivo):
     return clientes, matriz, capacidade, max_veiculos, n
 
 
-# ---------------------------------------------------------------------------
-# 2. DECODIFICAÇÃO + AVALIAÇÃO (split ótimo do tour gigante)
-# ---------------------------------------------------------------------------
-# Cache dos dados dos clientes em listas planas (demanda, ready, due,
-# service) — o decodificador é o ponto mais quente do código e listas são
-# bem mais rápidas que dict-de-dicts dentro do laço. A referência ao próprio
-# dict 'clientes' é guardada para o cache nunca confundir instâncias.
+# Cache de listas planas — acesso em lista é mais rápido que dict-de-dicts
+# no laço interno do decodificador (ponto mais quente do código).
 _cache_dados = []
 
 
@@ -140,26 +76,17 @@ def _dados_clientes(clientes):
         [clientes[i]["service_time"] for i in range(n)],
     )
     _cache_dados.append((clientes, dados))
-    if len(_cache_dados) > 10:          # nunca cresce além das instâncias
+    if len(_cache_dados) > 10:
         _cache_dados.pop(0)
     return dados
 
 
-# Acima deste número de clientes a avaliação usa o decodificador GULOSO
-# (O(N)) durante a evolução: o split ótimo custa O(N x tamanho de rota) e,
-# na instância de 400 clientes, derrubava o número de gerações a ponto de
-# piorar o resultado final. O split continua sendo aplicado à solução final
-# (metodo="split"), o que reduz veículos sem custo para a evolução.
+# Acima deste tamanho usa guloso durante a evolução: split custa O(N x rota)
+# e reduz gerações o suficiente para piorar o resultado final.
 LIMIAR_SPLIT = 250
 
 
 def _decodificar_guloso(solucao, matriz, clientes, capacidade, max_veiculos):
-    """
-    Decodificador guloso O(N) (a versão original do ag_tsp.py): percorre o
-    tour e fecha a rota na primeira violação de capacidade ou janela.
-    Produz partições piores que o split ótimo, mas é ~10-30x mais barato —
-    usado como avaliação durante a evolução nas instâncias grandes.
-    """
     demanda, ready, due, service = _dados_clientes(clientes)
     rotas = []
     rota_atual = []
@@ -171,11 +98,11 @@ def _decodificar_guloso(solucao, matriz, clientes, capacidade, max_veiculos):
         dist = matriz[pos][c]
         chegada = tempo + dist
         if chegada < ready[c]:
-            chegada = ready[c]              # espera permitida
+            chegada = ready[c]  # espera permitida
 
         if rota_atual and (carga + demanda[c] > capacidade
                            or chegada > due[c]):
-            rotas.append(rota_atual)        # fecha a rota e abre veículo novo
+            rotas.append(rota_atual)
             rota_atual = []
             pos = 0
             carga = 0.0
@@ -199,34 +126,10 @@ def _decodificar_guloso(solucao, matriz, clientes, capacidade, max_veiculos):
 def decodificar_e_avaliar(solucao, matriz, clientes, capacidade, max_veiculos,
                           metodo=None):
     """
-    Decodifica o tour gigante em rotas usando o SPLIT ÓTIMO (algoritmo de
-    particionamento de Prins, adaptado às janelas de tempo do VRPTW).
-
-    metodo: "split", "guloso" ou None (automático: split até LIMIAR_SPLIT
-    clientes; guloso acima disso, pelo custo — ver comentário do limiar).
-
-    Em vez de fechar a rota gulosamente na primeira violação (versão
-    anterior, que fragmentava a frota), uma programação dinâmica escolhe a
-    MELHOR partição do tour em rotas consecutivas:
-
-        custo[k] = melhor custo para atender os k primeiros clientes do tour
-        custo[j+1] = min sobre i <= j de  custo[i] + custo_rota(i..j)
-
-    onde a rota i..j (servida na ordem do tour) só é considerada se for
-    viável: capacidade, janelas de tempo (com espera permitida quando o
-    veículo chega cedo) e retorno ao depósito dentro do horizonte. O custo
-    é lexicográfico (violação, nº de veículos, distância) — exatamente as
-    prioridades da competição. Clientes individualmente inviáveis (não
-    existem nas instâncias benchmark) viram rotas unitárias com a violação
-    medida, para que as regras de Deb possam penalizá-los.
-
-    A viabilidade de uma rota é monotônica: se i..j viola capacidade ou
-    janela, qualquer extensão i..j' (j' > j) também viola — por isso o laço
-    interno pode parar cedo ('break'), mantendo o custo próximo de
-    O(N x tamanho máximo de rota).
-
-    Retorna (rotas, aval) — mesma interface da versão anterior, então os
-    cinco algoritmos não precisam mudar.
+    Split ótimo (programação dinâmica) do tour gigante em rotas viáveis.
+    metodo="split"|"guloso"|None (automático pelo LIMIAR_SPLIT).
+    A viabilidade é monotônica: se i..j viola, i..j' (j'>j) também viola —
+    o laço interno para cedo mantendo custo próximo de O(N x tamanho de rota).
     """
     if metodo is None:
         metodo = "split" if len(solucao) <= LIMIAR_SPLIT else "guloso"
@@ -236,18 +139,17 @@ def decodificar_e_avaliar(solucao, matriz, clientes, capacidade, max_veiculos,
 
     demanda, ready, due, service = _dados_clientes(clientes)
     n = len(solucao)
-    horizonte = due[0]                 # janela do depósito = fim da operação
+    horizonte = due[0]
     INF = float("inf")
-    custo = [(INF, INF, INF)] * (n + 1)   # (violação, veículos, distância)
+    custo = [(INF, INF, INF)] * (n + 1)
     custo[0] = (0.0, 0, 0.0)
-    pred = [0] * (n + 1)               # início da última rota da partição
+    pred = [0] * (n + 1)
 
     matriz_0 = matriz[0]
     for i in range(n):
         ci = custo[i]
         if ci[0] == INF:
             continue
-        # Tenta a rota que começa no cliente solucao[i] e vai esticando
         carga = 0.0
         tempo = 0.0
         dist_rota = 0.0
@@ -258,15 +160,15 @@ def decodificar_e_avaliar(solucao, matriz, clientes, capacidade, max_veiculos,
             dist_seg = matriz[pos][c]
             chegada = tempo + dist_seg
             if chegada < ready[c]:
-                chegada = ready[c]      # chegou cedo: espera abrir a janela
+                chegada = ready[c]
             carga += demanda[c]
 
             estourou = carga > capacidade or chegada > due[c]
             if j > i and estourou:
-                break                   # esticar mais só piora (monotônico)
+                break
 
             viol = 0.0
-            if estourou:                # só possível na rota unitária (j == i)
+            if estourou:
                 if chegada > due[c]:
                     viol += chegada - due[c]
                 if carga > capacidade:
@@ -277,7 +179,7 @@ def decodificar_e_avaliar(solucao, matriz, clientes, capacidade, max_veiculos,
             pos = c
 
             retorno = tempo + matriz[pos][0]
-            if retorno > horizonte:     # retorno só atrasa ao esticar a rota
+            if retorno > horizonte:
                 if j > i:
                     break
                 viol += retorno - horizonte
@@ -287,10 +189,9 @@ def decodificar_e_avaliar(solucao, matriz, clientes, capacidade, max_veiculos,
                 custo[j + 1] = cand
                 pred[j + 1] = i
             if viol > 0:
-                break                   # rota com violação não é esticada
+                break
             j += 1
 
-    # Reconstrói as rotas da melhor partição seguindo os predecessores
     rotas = []
     fim = n
     while fim > 0:
@@ -304,15 +205,6 @@ def decodificar_e_avaliar(solucao, matriz, clientes, capacidade, max_veiculos,
 
 
 def avaliar_rotas(rotas, matriz, clientes, capacidade, max_veiculos):
-    """
-    Calcula todas as métricas percorrendo as rotas (fonte única de verdade
-    para distância e violações — independente de como as rotas surgiram):
-      - distância total (euclidiana, com ida e volta ao depósito);
-      - violação de capacidade (excesso de carga por rota);
-      - violação de janela (atraso na chegada; espera não é violação) e
-        retorno ao depósito após o horizonte;
-      - violação de frota (veículos além do limite da instância).
-    """
     demanda, ready, due, service = _dados_clientes(clientes)
     horizonte = due[0]
 
@@ -358,21 +250,11 @@ def avaliar_rotas(rotas, matriz, clientes, capacidade, max_veiculos):
 
 
 def avaliar(solucao, matriz, clientes, capacidade, max_veiculos):
-    """Atalho quando só interessa a avaliação (descarta as rotas)."""
     return decodificar_e_avaliar(solucao, matriz, clientes, capacidade, max_veiculos)[1]
 
 
-# ---------------------------------------------------------------------------
-# 3. REGRAS DE DEB (tratamento de restrições escolhido para TODOS os algoritmos)
-# ---------------------------------------------------------------------------
 def eh_melhor_deb(a, b):
-    """
-    Compara duas avaliações pelas regras de Deb:
-      1. entre duas soluções viáveis, vence a de melhor objetivo;
-      2. entre uma viável e uma inviável, vence a viável;
-      3. entre duas inviáveis, vence a de menor violação total.
-    Retorna True se 'a' é melhor que 'b'.
-    """
+    """Regras de Deb: viável > inviável; entre iguais, menor objetivo/violação."""
     if a["violacao"] == 0 and b["violacao"] == 0:
         return a["objetivo"] < b["objetivo"]
     if a["violacao"] == 0:
@@ -383,37 +265,19 @@ def eh_melhor_deb(a, b):
 
 
 def chave_deb(aval):
-    """
-    Chave de ordenação equivalente às regras de Deb (menor = melhor):
-    soluções viáveis vêm antes (ordenadas por objetivo) e as inviáveis
-    depois (ordenadas por violação e, em empate, por objetivo).
-    """
     if aval["violacao"] == 0:
         return (0, aval["objetivo"], 0.0)
     return (1, aval["violacao"], aval["objetivo"])
 
 
-# ---------------------------------------------------------------------------
-# 4. POPULAÇÃO INICIAL HEURÍSTICA (mesma estratégia do ag_tsp.py original)
-# ---------------------------------------------------------------------------
 def solucoes_iniciais_heuristicas(n, clientes, matriz, quantidade):
-    """
-    Gera 'quantidade' permutações iniciais combinando quatro famílias
-    (estratégia herdada do ag_tsp.py original):
-      1. ordenações por TEMPO (due_date e ready_time) + variações mutadas;
-      2. vizinho mais próximo (ESPAÇO puro), com início aleatório;
-      3. guloso ESPAÇO-TEMPO: minimiza distância * due_date do candidato;
-      4. permutações aleatórias para completar a diversidade.
-    """
     solucoes = []
 
-    # 1. Ordenações por tempo
     solucao_due = sorted(range(1, n), key=lambda c: clientes[c]["due_date"])
     solucoes.append(solucao_due)
     solucao_ready = sorted(range(1, n), key=lambda c: clientes[c]["ready_time"])
     solucoes.append(solucao_ready)
 
-    # Variações da ordenação por due_date (trocas aleatórias leves)
     for _ in range(max(1, int(quantidade * 0.2))):
         mutante = solucao_due[:]
         for _ in range(5):
@@ -421,7 +285,6 @@ def solucoes_iniciais_heuristicas(n, clientes, matriz, quantidade):
             mutante[i], mutante[j] = mutante[j], mutante[i]
         solucoes.append(mutante)
 
-    # 2. Vizinho mais próximo (início aleatório)
     for _ in range(max(1, int(quantidade * 0.3))):
         nao_visitados = list(range(1, n))
         atual = random.choice(nao_visitados)
@@ -434,7 +297,6 @@ def solucoes_iniciais_heuristicas(n, clientes, matriz, quantidade):
             atual = prox
         solucoes.append(rota)
 
-    # 3. Guloso espaço-tempo (distância x urgência da janela)
     for _ in range(max(1, int(quantidade * 0.3))):
         nao_visitados = list(range(1, n))
         atual = random.choice(nao_visitados)
@@ -448,7 +310,6 @@ def solucoes_iniciais_heuristicas(n, clientes, matriz, quantidade):
             atual = prox
         solucoes.append(rota)
 
-    # 4. Aleatórias até completar
     while len(solucoes) < quantidade:
         aleatoria = list(range(1, n))
         random.shuffle(aleatoria)
@@ -457,21 +318,11 @@ def solucoes_iniciais_heuristicas(n, clientes, matriz, quantidade):
     return solucoes[:quantidade]
 
 
-# ---------------------------------------------------------------------------
-# 5. CONVERSÃO PERMUTAÇÃO <-> CHAVES ALEATÓRIAS (para PSO e DE)
-# ---------------------------------------------------------------------------
 def chaves_para_permutacao(chaves):
-    """
-    Decodifica um vetor contínuo (random keys) em permutação de clientes:
-    a posição de cada cliente no tour é dada pela ordem crescente da sua
-    chave. A dimensão k corresponde ao cliente k+1.
-    """
     return [int(i) + 1 for i in np.argsort(chaves, kind="stable")]
 
 
 def permutacao_para_chaves(perm):
-    """Operação inversa: gera chaves que reproduzem a permutação dada
-    (usada para semear PSO/DE com as soluções iniciais heurísticas)."""
     n = len(perm)
     chaves = np.empty(n)
     for posicao, cliente in enumerate(perm):
@@ -479,22 +330,9 @@ def permutacao_para_chaves(perm):
     return chaves
 
 
-# ---------------------------------------------------------------------------
-# 6. BUSCA LOCAL SIMPLES (pós-processamento, igual para todos os algoritmos)
-# ---------------------------------------------------------------------------
 def busca_local(solucao, aval, matriz, clientes, capacidade, max_veiculos,
                 max_tentativas=20000, tempo_limite=None):
-    """
-    Subida de encosta estocástica sobre o tour gigante, aplicada apenas à
-    MELHOR solução ao final da evolução (não altera o algoritmo original).
-    Vizinhanças sorteadas a cada tentativa:
-      - troca de dois clientes (swap);
-      - realocação de um cliente para outra posição (or-opt de tamanho 1);
-      - realocação de um segmento de 2 ou 3 clientes (or-opt maior — move
-        pedaços de rota inteiros, o que ajuda a esvaziar/fundir rotas);
-      - inversão de um trecho (2-opt no tour gigante).
-    Movimentos são aceitos se forem melhores pelas regras de Deb.
-    """
+    """Subida de encosta estocástica: swap, or-opt 1, or-opt 2-3, 2-opt."""
     melhor = list(solucao)
     melhor_aval = aval
     n = len(melhor)
@@ -507,19 +345,19 @@ def busca_local(solucao, aval, matriz, clientes, capacidade, max_veiculos,
         vizinho = melhor[:]
         i, j = sorted(random.sample(range(n), 2))
         sorteio = random.random()
-        if sorteio < 0.25:                       # troca
+        if sorteio < 0.25:
             vizinho[i], vizinho[j] = vizinho[j], vizinho[i]
-        elif sorteio < 0.50:                     # realocação de 1 cliente
+        elif sorteio < 0.50:
             cliente = vizinho.pop(i)
             vizinho.insert(j, cliente)
-        elif sorteio < 0.75:                     # realocação de segmento (2-3)
+        elif sorteio < 0.75:
             tam_seg = random.randint(2, 3)
             i = random.randint(0, n - tam_seg)
             segmento = vizinho[i:i + tam_seg]
             del vizinho[i:i + tam_seg]
             destino = random.randint(0, len(vizinho))
             vizinho[destino:destino] = segmento
-        else:                                    # inversão de trecho (2-opt)
+        else:
             vizinho[i:j + 1] = reversed(vizinho[i:j + 1])
 
         aval_vizinho = avaliar(vizinho, matriz, clientes, capacidade, max_veiculos)
@@ -531,19 +369,8 @@ def busca_local(solucao, aval, matriz, clientes, capacidade, max_veiculos,
     return melhor, melhor_aval, melhorias
 
 
-# ---------------------------------------------------------------------------
-# 7. VERIFICAÇÃO INDEPENDENTE DA SOLUÇÃO FINAL
-# ---------------------------------------------------------------------------
 def verificar_solucao(rotas, matriz, clientes, capacidade, max_veiculos, n):
-    """
-    Reconfere TODAS as restrições do VRPTW de forma independente do
-    decodificador (defesa contra bugs — solução inviável é desclassificada):
-      - cada cliente atendido exatamente uma vez (sem faltas nem repetições);
-      - capacidade respeitada em cada rota;
-      - janelas de tempo respeitadas (com espera quando chega cedo);
-      - número de rotas dentro do limite da frota.
-    Retorna (viavel, lista_de_problemas).
-    """
+    """Verificação independente do decodificador para a solução final."""
     problemas = []
 
     atendidos = [c for rota in rotas for c in rota]
@@ -572,7 +399,6 @@ def verificar_solucao(rotas, matriz, clientes, capacidade, max_veiculos, n):
                     f"(chegada {chegada:.2f} > due {clientes[c]['due_date']:.2f})")
             tempo = chegada + clientes[c]["service_time"]
             pos = c
-        # retorno ao depósito dentro do horizonte (janela do depósito)
         retorno = tempo + matriz[pos][0]
         if retorno > clientes[0]["due_date"] + 1e-9:
             problemas.append(f"rota {k}: retorno ao deposito apos o horizonte")
@@ -580,11 +406,7 @@ def verificar_solucao(rotas, matriz, clientes, capacidade, max_veiculos, n):
     return len(problemas) == 0, problemas
 
 
-# ---------------------------------------------------------------------------
-# 8. SAÍDA NO FORMATO DA COMPETIÇÃO
-# ---------------------------------------------------------------------------
 def calcular_distancia_rotas(rotas, matriz):
-    """Distância total das rotas (depósito -> clientes -> depósito)."""
     total = 0.0
     for rota in rotas:
         pos = 0
@@ -596,8 +418,6 @@ def calcular_distancia_rotas(rotas, matriz):
 
 
 def _ler_resultado_existente(caminho):
-    """Lê veículos e distância de um arquivo de resultado já gravado.
-       Retorna (veiculos, distancia) ou None se não existir/não parsear."""
     if not os.path.isfile(caminho):
         return None
     veiculos = distancia = None
@@ -617,15 +437,7 @@ def _ler_resultado_existente(caminho):
 
 def escrever_resultado(nome_instancia, algoritmo, autores, rotas, distancia,
                        tempo_exec):
-    """
-    Grava o arquivo de resultado no formato exigido pelo manual da
-    competição (4 casas decimais, rotas com depósito nas pontas).
-    Ex. de nome: dados/resultados/c101_resultado_ag.txt
-
-    Como as regras permitem várias execuções e só a melhor conta, o
-    arquivo NÃO é sobrescrito se já contiver uma solução melhor pelos
-    critérios da competição (menos veículos; em empate, menor distância).
-    """
+    """Não sobrescreve se o arquivo existente já contiver solução melhor."""
     pasta = os.path.join(RAIZ, "dados", "resultados")
     os.makedirs(pasta, exist_ok=True)
     caminho = os.path.join(
@@ -660,7 +472,6 @@ def escrever_resultado(nome_instancia, algoritmo, autores, rotas, distancia,
 
 def imprimir_resumo(nome_instancia, algoritmo, parametros, aval, rotas,
                     melhor_iteracao, tempo_exec, viavel, problemas):
-    """Imprime no console o resumo completo pedido no enunciado do trabalho."""
     print("\n" + "=" * 50)
     print(f"Instância: {nome_instancia} | Algoritmo: {algoritmo}")
     print(f"Parâmetros: {parametros}")

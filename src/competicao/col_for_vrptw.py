@@ -1,42 +1,3 @@
-"""
-col_for_vrptw.py — Colônia de Formigas (ACO) adaptada para o VRPTW.
-
-ORIGEM: src/enxame/col_for.py (ACO clássico para o TSP: feromônio,
-probabilidade de transição tau^alfa * eta^beta, roleta e evaporação).
-
-O QUE FOI MANTIDO do algoritmo original:
-  - a construção de soluções por formigas: cada formiga monta um caminho
-    cliente a cliente escolhendo o próximo vértice por roleta sobre
-    tau^alfa * eta^beta ('calcula_p_trans' + 'descobre_prox_vertice');
-  - a matriz de feromônio com inicialização aleatória simétrica
-    ('matriz_feromonios_inicial');
-  - a atualização do feromônio: evaporação (1-rho) + depósito Q/L de cada
-    formiga ('atualiza_matriz_feromonios');
-  - o laço principal de 'executar_aco' (iterações x formigas).
-
-O QUE FOI ADAPTADO (e por quê):
-  - cada formiga constrói um TOUR GIGANTE (permutação dos clientes), que o
-    decodificador comum divide em rotas viáveis (capacidade + janelas) —
-    a mesma representação dos demais algoritmos. A formiga parte do
-    depósito (vértice 0), então o feromônio do depósito também é usado;
-  - VISIBILIDADE espaço-tempo: eta(i,j) = 1 / (d(i,j) * due_date_j) em vez
-    de 1/d(i,j). É a mesma heurística "distância x urgência da janela" da
-    população inicial do AG original — clientes com janela mais cedo ficam
-    mais atraentes, o que reduz violações de janela na decodificação;
-  - o depósito de feromônio passa a percorrer as ARESTAS DAS ROTAS
-    DECODIFICADAS (incluindo idas/voltas ao depósito) e usa L = objetivo
-    (veículos e distância), pois é isso que a competição avalia. No TSP
-    original o depósito era no ciclo completo com L = distância;
-  - depósito elitista: a melhor solução global reforça suas arestas a cada
-    iteração (pequena adição clássica do ACO, melhora a convergência);
-  - cálculo da probabilidade vetorizado com numpy — necessário porque a
-    instância maior tem 400 clientes (o laço puro em Python do original
-    não terminaria dentro do tempo limite da competição);
-  - melhor solução global escolhida pelas REGRAS DE DEB;
-  - critério de parada por tempo + busca local final + saída no formato
-    exigido pela competição.
-"""
-
 import os
 import random
 import sys
@@ -50,44 +11,37 @@ from competicao.vrptw_comum import (INSTANCIAS_PADRAO, busca_local, caminho_inst
                          escrever_resultado, imprimir_resumo,
                          verificar_solucao)
 
-# --------------------------- Parâmetros do ACO ------------------------------
-AUTORES = "Lucas Rivetti, Ian Nunes"        # ajustar com os nomes do grupo
-N_FORMIGAS = 20                  # formigas por iteração
-NUM_ITE_MAX = 1000            # teto de iterações (para por tempo)
-TEMPO_MAX_SEG = 60              # tempo máximo por instância
-ALPHA = 1.0                      # peso do feromônio
-BETA = 2.0                       # peso da visibilidade (heurística)
-RHO = 0.10                       # taxa de evaporação
-Q = 1000000.0                    # constante de depósito (escala do objetivo)
-PESO_ELITISTA = 5.0              # reforço da melhor solução global
-FRACAO_BUSCA_LOCAL = 0.25        # fração final do tempo p/ busca local
+AUTORES = "Lucas Rivetti, Ian Nunes"
+N_FORMIGAS = 20
+NUM_ITE_MAX = 1000
+TEMPO_MAX_SEG = 60
+ALPHA = 1.0
+BETA = 2.0
+RHO = 0.10
+Q = 1000000.0
+PESO_ELITISTA = 5.0
+FRACAO_BUSCA_LOCAL = 0.25
 
 
 def matriz_feromonios_inicial(n):
-    """Matriz de feromônio inicial aleatória e simétrica (como no original),
-       agora em numpy. A diagonal não é usada (vértice atual fica fora dos
-       candidatos), então recebe 1 apenas para evitar valores especiais."""
     matriz = np.random.uniform(0.0, 1.0, size=(n, n))
-    matriz = (matriz + matriz.T) / 2.0      # simetriza
+    matriz = (matriz + matriz.T) / 2.0  # simetriza
     np.fill_diagonal(matriz, 1.0)
     return matriz
 
 
 def calcula_p_trans(candidatos, vertice_atual, matriz_fer, visibilidade,
                     alpha=ALPHA, beta=BETA):
-    """Probabilidades de transição do ACO — mesma fórmula do original
-       (tau^alfa * eta^beta normalizado), vetorizada com numpy."""
     tau = matriz_fer[vertice_atual, candidatos] ** alpha
     eta = visibilidade[vertice_atual, candidatos] ** beta
     pesos = tau * eta
     soma = pesos.sum()
-    if soma <= 0.0:                    # degenerado: escolhe uniforme
+    if soma <= 0.0:  # degenerado: escolhe uniforme
         return np.full(len(candidatos), 1.0 / len(candidatos))
     return pesos / soma
 
 
 def descobre_prox_vertice(probabilidades, candidatos):
-    """Roleta sobre as probabilidades (mesmo papel da função original)."""
     r = random.random()
     soma_acumulada = 0.0
     for k in range(len(candidatos)):
@@ -98,10 +52,8 @@ def descobre_prox_vertice(probabilidades, candidatos):
 
 
 def constroi_tour(n, matriz_fer, visibilidade):
-    """Uma formiga constrói o tour gigante: parte do depósito (0) e escolhe
-       cliente a cliente pela regra de transição até visitar todos."""
     candidatos = list(range(1, n))
-    v_atual = 0                        # depósito
+    v_atual = 0  # depósito
     solucao = []
     while candidatos:
         probs = calcula_p_trans(candidatos, v_atual, matriz_fer, visibilidade)
@@ -113,8 +65,7 @@ def constroi_tour(n, matriz_fer, visibilidade):
 
 
 def arestas_das_rotas(rotas):
-    """Arestas reais percorridas pela solução decodificada,
-       incluindo as idas e voltas ao depósito."""
+    """Arestas percorridas incluindo idas e voltas ao depósito."""
     arestas = []
     for rota in rotas:
         pos = 0
@@ -127,19 +78,14 @@ def arestas_das_rotas(rotas):
 
 def atualiza_matriz_feromonios(matriz_fer, solucoes_avaliadas, melhor_global,
                                rho=RHO, q=Q):
-    """Evaporação + depósito (mesma estrutura do original): cada formiga
-       deposita q/L nas arestas das suas ROTAS DECODIFICADAS, onde L é o
-       objetivo (veículos*peso + distância). A melhor solução global
-       deposita um reforço elitista adicional."""
-    matriz_fer *= (1.0 - rho)          # evaporação em todas as arestas
+    matriz_fer *= (1.0 - rho)
 
     for rotas, aval in solucoes_avaliadas:
         delta = q / aval["objetivo"]
         for (i, j) in arestas_das_rotas(rotas):
             matriz_fer[i, j] += delta
-            matriz_fer[j, i] += delta  # matriz simétrica, como no original
+            matriz_fer[j, i] += delta
 
-    # Depósito elitista da melhor solução encontrada até agora
     if melhor_global is not None:
         rotas, aval = melhor_global
         delta = PESO_ELITISTA * q / aval["objetivo"]
@@ -149,7 +95,6 @@ def atualiza_matriz_feromonios(matriz_fer, solucoes_avaliadas, melhor_global,
 
 
 def executar_aco(nome_instancia, tempo_max=TEMPO_MAX_SEG):
-    """Executa o ACO completo em uma instância e grava o resultado."""
     caminho = caminho_instancia(nome_instancia)
     clientes, matriz, capacidade, max_veiculos, n = carregar_vrptw(caminho)
 
@@ -159,14 +104,13 @@ def executar_aco(nome_instancia, tempo_max=TEMPO_MAX_SEG):
     matriz_np = np.array(matriz)
     matriz_fer = matriz_feromonios_inicial(n)
 
-    # Visibilidade espaço-tempo: 1 / (distância * urgência da janela).
-    # O +0.1 e o +1 evitam divisão por zero (distância nula / janelas em 0).
+    # +0.1 e +1 evitam divisão por zero (distância nula / janelas em 0)
     due = np.array([clientes[j]["due_date"] for j in range(n)])
     visibilidade = 1.0 / ((matriz_np + 0.1) * (due[None, :] + 1.0))
     np.fill_diagonal(visibilidade, 0.0)
 
-    melhor_solucao = None              # tour gigante da melhor solução
-    melhor_rotas_aval = None           # (rotas, aval) p/ depósito elitista
+    melhor_solucao = None
+    melhor_rotas_aval = None
     melhor_iteracao = 0
 
     iteracao = 0
@@ -178,7 +122,6 @@ def executar_aco(nome_instancia, tempo_max=TEMPO_MAX_SEG):
                                                 capacidade, max_veiculos)
             solucoes_avaliadas.append((rotas, aval))
 
-            # Melhor global pelas regras de Deb
             if melhor_rotas_aval is None or eh_melhor_deb(
                     aval, melhor_rotas_aval[1]):
                 melhor_solucao = solucao[:]
@@ -188,9 +131,6 @@ def executar_aco(nome_instancia, tempo_max=TEMPO_MAX_SEG):
         atualiza_matriz_feromonios(matriz_fer, solucoes_avaliadas,
                                    melhor_rotas_aval)
 
-        # Polimento memético: a cada 20 iterações, rajada curta de busca
-        # local na melhor solução; se melhorar, o depósito elitista passa a
-        # reforçar as arestas da solução polida.
         if iteracao % 20 == 19:
             sol_bl, aval_bl, _ = busca_local(
                 melhor_solucao, melhor_rotas_aval[1], matriz, clientes,
@@ -210,7 +150,6 @@ def executar_aco(nome_instancia, tempo_max=TEMPO_MAX_SEG):
                   f"distância = {aval['distancia']:.2f} [{status}]")
         iteracao += 1
 
-    # --- BUSCA LOCAL na melhor solução (pós-processamento) ---
     melhor_aval = melhor_rotas_aval[1]
     tempo_restante = tempo_max - (time.time() - inicio)
     melhor_solucao, melhor_aval, melhorias = busca_local(
@@ -220,7 +159,6 @@ def executar_aco(nome_instancia, tempo_max=TEMPO_MAX_SEG):
 
     tempo_exec = time.time() - inicio
 
-    # Partição final sempre pelo split ótimo (a evolução pode usar o guloso)
     rotas, melhor_aval = decodificar_e_avaliar(
         melhor_solucao, matriz, clientes, capacidade, max_veiculos,
         metodo="split")
